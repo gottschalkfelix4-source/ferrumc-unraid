@@ -1,0 +1,8 @@
+*
+!Dockerfile
+!docker/
+!docker/**
+!requirements.txt
+!LICENSE
+!LICENSE.ferrumc
+

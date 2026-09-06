@@ -1,0 +1,27 @@
+services:
+  ferrumc:
+    image: ghcr.io/gottschalkfelix4-source/ferrumc-unraid:latest
+    container_name: ferrumc
+    restart: unless-stopped
+    stop_grace_period: 120s
+    ports:
+      - "25565:25565/tcp"
+      - "9010:9000/tcp"
+    environment:
+      PUID: "99"
+      PGID: "100"
+      TZ: Europe/Berlin
+      MOTD: "FerrumC auf Unraid"
+      MAX_PLAYERS: "20"
+      VIEW_DISTANCE: "8"
+      ONLINE_MODE: "true"
+      GAMEMODE: creative
+      LOG_LEVEL: info
+    volumes:
+      - ./data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+

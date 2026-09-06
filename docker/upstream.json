@@ -1,0 +1,16 @@
+{
+  "repository": "ferrumc-rs/ferrumc",
+  "version": "v0.1.0-rc2",
+  "commit": "8054bc4ee5add21e0438258a8b0444b5c36dc90f",
+  "assets": {
+    "amd64": {
+      "target": "x86_64-unknown-linux-musl",
+      "sha256": "e8f118eda99056536fb5f1c2de89b0691c4001d6b4c306b247972a3380a08d53"
+    },
+    "arm64": {
+      "target": "aarch64-unknown-linux-musl",
+      "sha256": "4fb5da8af3a66f46ce273bd8caf6006f26758ef99bab742edd64612e57e2ac14"
+    }
+  }
+}
+
