@@ -4,55 +4,23 @@ import base64
 import hashlib
 import json
 import os
+from pathlib import Path
 import re
 import socket
 import struct
+import sys
 import urllib.request
 from urllib.parse import urljoin
 
 
-def read_exact(stream, length):
-    data = bytearray()
-    while len(data) < length:
-        part = stream.read(length - len(data))
-        if not part:
-            raise EOFError("Connection closed before the complete packet arrived")
-        data.extend(part)
-    return bytes(data)
-
-
-def varint(number):
-    result = bytearray()
-    while number > 127:
-        result.append((number & 127) | 128)
-        number >>= 7
-    result.append(number)
-    return bytes(result)
-
-
-def read_varint(stream):
-    number = 0
-    for offset in range(5):
-        byte = read_exact(stream, 1)[0]
-        number |= (byte & 127) << (7 * offset)
-        if not byte & 128:
-            return number
-    raise ValueError("Invalid VarInt")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "docker"))
+from minecraft_status import read_exact, server_status
 
 
 def probe(mc_port, dashboard_port):
-    with socket.create_connection(("127.0.0.1", mc_port), timeout=10) as sock:
-        stream = sock.makefile("rb")
-        host = b"localhost"
-        handshake = b"\x00" + varint(772) + varint(len(host)) + host + struct.pack(">H", mc_port) + b"\x01"
-        sock.sendall(varint(len(handshake)) + handshake + b"\x01\x00")
-        assert 0 < read_varint(stream) < 1048576
-        assert read_varint(stream) == 0
-        size = read_varint(stream)
-        assert size < 1048576
-        status = json.loads(read_exact(stream, size))
-        assert status["version"]["protocol"] == 772, status
-        assert status["players"]["online"] == 0, status
+    status = server_status(mc_port, timeout=10)
+    assert status["version"]["protocol"] == 772, status
+    assert status["players"]["online"] == 0, status
     url = f"http://127.0.0.1:{dashboard_port}"
     with urllib.request.urlopen(url, timeout=10) as response:
         html = response.read().decode()

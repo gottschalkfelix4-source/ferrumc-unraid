@@ -19,7 +19,7 @@ RUN apk add --no-cache ca-certificates tzdata
 COPY requirements.txt /opt/ferrumc/requirements.txt
 RUN pip install --no-cache-dir -r /opt/ferrumc/requirements.txt
 COPY --from=download /out/ferrumc /opt/ferrumc/ferrumc
-COPY docker/entrypoint.py docker/healthcheck.py /opt/ferrumc/
+COPY docker/entrypoint.py docker/healthcheck.py docker/minecraft_status.py /opt/ferrumc/
 COPY docker/upstream.json LICENSE LICENSE.ferrumc /opt/ferrumc/
 ENV PUID=99 PGID=100 UMASK=002 LOG_LEVEL=info PYTHONUNBUFFERED=1
 WORKDIR /data
@@ -31,4 +31,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD ["python", "/opt/ferrumc/healthcheck.py"]
 ENTRYPOINT ["python", "/opt/ferrumc/entrypoint.py"]
 CMD ["run"]
-

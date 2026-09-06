@@ -1,6 +1,5 @@
 """Run a real container, then recreate it and verify persistent data and shutdown."""
 import json
-from pathlib import Path
 import subprocess
 import sys
 import time
@@ -63,6 +62,7 @@ print(hashlib.sha256((p/'configs/config.toml').read_bytes()).hexdigest())
             assert state["ExitCode"] == 0, state
             logs = docker("logs", name)
             assert "Shutting down server" in logs and "Server exited successfully" in logs, logs
+            assert "Unhandled handshake error" not in logs, logs
             docker("rm", name)
         print("PASS: non-root UID, environment config, world persistence, recreation and graceful shutdown")
     finally:
@@ -76,4 +76,3 @@ print(hashlib.sha256((p/'configs/config.toml').read_bytes()).hexdigest())
 
 if __name__ == "__main__":
     main(sys.argv[1])
-
