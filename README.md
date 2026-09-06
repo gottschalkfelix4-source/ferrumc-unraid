@@ -48,6 +48,16 @@ Das Passwort wird niemals an FerrumCs Kindprozess weitergegeben. Der native Verw
 
 FerrumC selbst bleibt experimentell und ist kein vollständiger Vanilla-/Paper-Ersatz. Creative ist voreingestellt; vollständiges Survival, Java-Plugins und Vanilla-Parität sind nicht Bestandteil dieser Dashboard-Erweiterung. Es wird ein festgeschriebener Release-Quellstand mit nachvollziehbaren lokalen Patches gebaut.
 
+## Bestehenden Container aktualisieren
+
+In Unraid **Check for Updates → Update** ausführen, anschließend die WebUI neu laden. Beim ersten Update auf dieses Dashboard erscheint eine Anmeldung. Ohne gesetzte Variable lässt sich das erzeugte Passwort im Unraid-Terminal anzeigen:
+
+```sh
+docker exec ferrumc cat /data/dashboard-password.txt
+```
+
+Alternativ unter **Edit → Add another Path, Port, Variable… → Variable** den Schlüssel `DASHBOARD_PASSWORD` mit mindestens 12 Zeichen hinzufügen und Apply wählen. Welten und bisherige Einstellungen bleiben erhalten. Alte WebUI-Links mit `?ws_port=9010` funktionieren weiterhin.
+
 ## Einstellungen
 
 **Bis zum ersten Speichern im Dashboard** überschreiben die folgenden Variablen beim Containerstart die entsprechenden Werte in `configs/config.toml`. **Danach haben Dashboard-Einstellungen Vorrang**, auch bei Container-Updates. Die Datei `/data/.dashboard-config-managed` markiert diesen Zustand. Um wieder Template-Werte zu verwenden, den Container stoppen und diese Markierungsdatei entfernen. Ohne Variable oder mit leerem Wert bleiben manuelle Werte erhalten. Die Angaben unter „Template“ sind die Unraid-Vorgaben; die Binärdatei hat teilweise andere Standardwerte.
@@ -141,6 +151,8 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m unittest discover -s tests -v
 ```
+
+Details zur nativen Anbindung, API und Weiterentwicklung: [Entwicklungsdokumentation](docs/development.md).
 
 ## Herkunft und Lizenz
 

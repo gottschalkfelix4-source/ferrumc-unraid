@@ -7,7 +7,10 @@
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { page } from '$app/state';
+	import { afterNavigate } from '$app/navigation';
 	import { api, auth, telemetry } from '$lib/stores/telemetry.svelte.js';
+	const sidebar = Sidebar.useSidebar();
+	afterNavigate(() => sidebar.setOpenMobile(false));
 	const navItems = [{href:'/',label:'Overview',icon:LayoutGrid},{href:'/console',label:'Console',icon:Terminal},{href:'/players',label:'Players',icon:Users},{href:'/config',label:'Config',icon:Settings}];
 	let {onPowerClick, open=$bindable()}: {onPowerClick?:()=>void;open?:boolean}=$props();
 	let logoutError = $state('');

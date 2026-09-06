@@ -310,7 +310,7 @@
 						></div>
 					</div>
 					<p class="text-xs text-muted-foreground">
-						{ramFormatted} / {totalRamFormatted} Allocated
+						{ramFormatted} / {totalRamFormatted} host RAM
 					</p>
 				</div>
 
