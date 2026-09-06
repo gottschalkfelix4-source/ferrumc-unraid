@@ -3,4 +3,9 @@ __pycache__/
 data/
 .env
 *.pyc
+node_modules/
+.svelte-kit/
+dashboard/build/
+target/
+.local-test/
 

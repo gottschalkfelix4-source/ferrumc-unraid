@@ -1,0 +1,737 @@
+diff --git i/src/bin/src/game_loop.rs w/src/bin/src/game_loop.rs
+index 8ee860a..56eb47c 100644
+--- i/src/bin/src/game_loop.rs
++++ w/src/bin/src/game_loop.rs
+@@ -166,8 +166,16 @@ pub fn start_game_loop(global_state: GlobalState) -> Result<(), BinaryError> {
+ 
+             // Execute the schedule and measure how long it took
+             let start = Instant::now();
++            #[cfg(feature = "dashboard")]
++            if name == "tick" {
++                ferrumc_dashboard::bridge::dispatch_one(&mut ecs_world, global_state.clone());
++            }
+             timed.schedules[idx].schedule.run(&mut ecs_world);
+             let elapsed = start.elapsed();
++            #[cfg(feature = "dashboard")]
++            if name == "tick" {
++                ferrumc_dashboard::bridge::record_tick(elapsed);
++            }
+ 
+             // Log warning if schedule took longer than its allocated time budget
+             if elapsed > period {
+diff --git i/src/lib/commands/src/infrastructure.rs w/src/lib/commands/src/infrastructure.rs
+index 66cc84e..eb05e5f 100644
+--- i/src/lib/commands/src/infrastructure.rs
++++ w/src/lib/commands/src/infrastructure.rs
+@@ -45,6 +45,13 @@ pub fn register_command(command: Arc<Command>) {
+     }
+ }
+ 
++/// Names of commands available to the server console.
++pub fn command_names() -> Vec<String> {
++    let mut names: Vec<_> = COMMANDS.iter().map(|item| item.key().to_string()).collect();
++    names.sort();
++    names
++}
++
+ /// Gets the server's command graph.
+ pub fn get_graph() -> CommandGraph {
+     if let Ok(graph) = COMMAND_GRAPH.read() {
+diff --git i/src/lib/config/Cargo.toml w/src/lib/config/Cargo.toml
+index 7292ea8..f452a5a 100644
+--- i/src/lib/config/Cargo.toml
++++ w/src/lib/config/Cargo.toml
+@@ -5,6 +5,7 @@ edition = "2021"
+ description = "FerrumC configuration utilities"
+ 
+ [dependencies]
++serde_json = { workspace = true }
+ toml = { workspace = true }
+ thiserror = { workspace = true }
+ serde = { workspace = true }
+diff --git i/src/lib/config/src/lib.rs w/src/lib/config/src/lib.rs
+index 251d1fe..d6c7466 100644
+--- i/src/lib/config/src/lib.rs
++++ w/src/lib/config/src/lib.rs
+@@ -8,6 +8,7 @@
+ //! - [errors](errors/index.html): Error types for the config module.
+ //! - [server_config](server_config/index.html): Server configuration struct and functions.
+ 
++pub mod bans;
+ pub mod errors;
+ pub mod favicon;
+ pub mod server_config;
+diff --git i/src/lib/config/src/whitelist.rs w/src/lib/config/src/whitelist.rs
+index 7db81b3..5d6eaa7 100644
+--- i/src/lib/config/src/whitelist.rs
++++ w/src/lib/config/src/whitelist.rs
+@@ -1,14 +1,7 @@
+-use crate::errors::ConfigError;
+ use dashmap::DashSet;
+ use ferrumc_general_purpose::paths::get_root_path;
+ use once_cell::sync::OnceCell;
+-use rayon::prelude::*;
+-use serde_derive::Deserialize;
+-use std::collections::HashMap;
+-use std::fs::File;
+-use std::io::Read;
+-use std::io::Write;
+-use tracing::error;
++use std::fs;
+ use uuid::Uuid;
+ 
+ static WHITELIST: OnceCell<DashSet<u128>> = OnceCell::new();
+@@ -17,216 +10,31 @@ pub fn get_whitelist() -> &'static DashSet<u128> {
+     WHITELIST.get_or_init(create_whitelist)
+ }
+ 
++// UUID entries are authoritative. Never delete them because a Mojang lookup
++// failed or an offline player has no Mojang profile. Preserve the user's file.
+ pub fn create_whitelist() -> DashSet<u128> {
+-    let whitelist_location = get_root_path().join("whitelist.txt");
+-    if !whitelist_location.exists() {
+-        create_blank_whitelist_file();
+-    }
+-
+-    let mut file = match File::open(&whitelist_location) {
+-        Ok(file) => file,
+-        Err(e) => {
+-            error!("Could not open whitelist file: {e}");
+-            return DashSet::new();
+-        }
+-    };
+-
+-    let mut whitelist_str = String::new();
+-    if let Err(e) = file.read_to_string(&mut whitelist_str) {
+-        error!("Could not read whitelist file: {e}");
+-        return DashSet::new();
+-    }
+-
+-    if whitelist_str.is_empty() {
+-        return DashSet::new();
+-    }
+-
+-    let uuids: Vec<Uuid> = match convert_whitelist_file() {
+-        Ok(uuids) => uuids,
+-        Err(_e) => return DashSet::new(),
+-    };
+-
+-    let whitelist_set = DashSet::new();
+-    for uuid in uuids {
+-        whitelist_set.insert(uuid.as_u128());
+-    }
+-    if whitelist_set.is_empty() {
+-        create_blank_whitelist_file();
+-    }
+-    whitelist_set
+-}
+-
+-///converts usernames within the whitelist file to uuid, returns a list of all resulting uuids within the file
+-fn convert_whitelist_file() -> Result<Vec<Uuid>, ConfigError> {
+-    let whitelist_location = get_root_path().join("whitelist.txt");
+-    let mut return_uuids: Vec<Uuid> = Vec::new();
+-
+-    if !whitelist_location.exists() {
+-        create_blank_whitelist_file();
+-        return Ok(return_uuids);
+-    }
+-
+-    let mut file = File::open(&whitelist_location).map_err(|e| {
+-        error!("Could not open whitelist file: {e}");
+-        ConfigError::IOError(e)
+-    })?;
+-
+-    let mut whitelist_str = String::new();
+-    file.read_to_string(&mut whitelist_str).map_err(|e| {
+-        error!("Could not read whitelist file: {e}");
+-        ConfigError::IOError(e)
+-    })?;
+-
+-    let mut lines = whitelist_str
+-        .lines()
+-        .map(|line| line.trim().to_string())
+-        .collect::<Vec<_>>();
+-    if lines.is_empty() {
+-        create_blank_whitelist_file();
+-        return Ok(return_uuids);
+-    }
+-    //here we iterate over the lines removing duplicates while keeping the current order
+-    let mut seen = std::collections::HashSet::new();
+-
+-    lines.retain(|line| {
+-        if line.is_empty() || seen.contains(line) {
+-            false
+-        } else {
+-            seen.insert(line.clone());
+-            true
+-        }
+-    });
+-
+-    let mut uuids_to_convert: HashMap<Uuid, usize> = HashMap::new(); //pure uuid entries
+-    let mut valid_lines = Vec::new(); //lines that dont need changes
+-    let mut invalid_lines = Vec::new(); //entry isn't a valid uuid
+-
+-    for (index, line) in lines.iter().enumerate() {
+-        if line.is_empty() || line.starts_with('#') {
+-            valid_lines.push(index);
+-            continue;
+-        }
+-
+-        let (uuid_or_name, commented_name) = line
+-            .split_once('#')
+-            .map_or((line.as_str(), ""), |(pre_hash, post_hash)| {
+-                (pre_hash.trim(), post_hash.trim())
+-            });
+-
+-        if let Ok(uuid) = Uuid::try_parse(uuid_or_name) {
+-            if !commented_name.is_empty() {
+-                return_uuids.push(uuid);
+-                valid_lines.push(index);
+-            } else {
+-                uuids_to_convert.insert(uuid, index);
++    let path = get_root_path().join("whitelist.txt");
++    if !path.exists() { create_blank_whitelist_file(); }
++    let result = DashSet::new();
++    match fs::read_to_string(path) {
++        Ok(text) => for line in text.lines() {
++            let value = line.split('#').next().unwrap_or("").trim();
++            if value.is_empty() { continue; }
++            match Uuid::parse_str(value) {
++                Ok(id) => { result.insert(id.as_u128()); }
++                Err(_) => tracing::warn!("Ignoring invalid whitelist entry; use a player UUID"),
+             }
+-        } else {
+-            invalid_lines.push((index, line.clone()));
+-        }
++        },
++        Err(error) => tracing::error!("Could not read whitelist: {error}"),
+     }
+-
+-    let uuid_query_input: Vec<&Uuid> = uuids_to_convert.keys().collect();
+-    let found_usernames = query_mojang_for_usernames(uuid_query_input);
+-
+-    for profile in found_usernames {
+-        if let Some(index) = uuids_to_convert.remove(&Uuid::try_parse(&profile.id).unwrap()) {
+-            let uuid = Uuid::try_parse(&profile.id).unwrap();
+-            lines[index] = format!("{} # {}", uuid.hyphenated(), profile.name);
+-            valid_lines.push(index);
+-            return_uuids.push(uuid);
+-        }
+-    }
+-
+-    for (uuid, index) in uuids_to_convert {
+-        //line matched uuid regex but mojang returned no name
+-        lines[index] = format!("# UUID Doesnt Match a Real User: {uuid}");
+-    }
+-
+-    for (index, line) in invalid_lines {
+-        //line didn't match a valid uuid format
+-        lines[index] = format!("# Invalid UUID: {line}");
+-    }
+-
+-    let mut updated_whitelist = File::create(&whitelist_location).map_err(|e| {
+-        error!("Could not write updated whitelist file: {e}");
+-        ConfigError::IOError(e)
+-    })?;
+-
+-    //remove duplicate lines again
+-    let mut seen = std::collections::HashSet::new();
+-    lines.retain(|line| {
+-        if seen.contains(line) {
+-            false
+-        } else {
+-            seen.insert(line.clone());
+-            true
+-        }
+-    });
+-
+-    for line in lines {
+-        writeln!(updated_whitelist, "{line}").map_err(|e| {
+-            error!("Failed to write line: {e}");
+-            ConfigError::IOError(e)
+-        })?;
+-    }
+-    Ok(return_uuids)
+-}
+-
+-#[derive(Deserialize, Debug)]
+-struct MojangProfile {
+-    id: String,
+-    name: String,
+-}
+-
+-fn query_mojang_for_usernames(uuids: Vec<&Uuid>) -> Vec<MojangProfile> {
+-    if uuids.is_empty() {
+-        return Vec::new();
+-    }
+-
+-    uuids
+-        .into_iter()
+-        .par_bridge()
+-        .map(|uuid| {
+-            let uuid = uuid.as_simple();
+-            let response = reqwest::blocking::get(format!(
+-                "https://sessionserver.mojang.com/session/minecraft/profile/{uuid}"
+-            ));
+-
+-            match response {
+-                Ok(response) => Some(response.json::<MojangProfile>()),
+-                _ => None,
+-            }
+-        })
+-        .flatten()
+-        .filter(|profile| profile.is_ok())
+-        .map(|profile| profile.unwrap())
+-        .collect()
+-}
+-
+-pub fn add_to_whitelist(uuid: Uuid) -> bool {
+-    WHITELIST
+-        .get_or_init(create_whitelist)
+-        .insert(uuid.as_u128())
+-}
+-
+-pub fn remove_from_whitelist(uuid: Uuid) -> bool {
+-    WHITELIST
+-        .get_or_init(create_whitelist)
+-        .remove(&uuid.as_u128())
+-        .is_some()
++    result
+ }
+ 
++pub fn add_to_whitelist(uuid: Uuid) -> bool { get_whitelist().insert(uuid.as_u128()) }
++pub fn remove_from_whitelist(uuid: Uuid) -> bool { get_whitelist().remove(&uuid.as_u128()).is_some() }
+ pub fn create_blank_whitelist_file() {
+-    let whitelist_location = get_root_path().join("whitelist.txt");
+-
+-    if let Err(e) = File::create(&whitelist_location).and_then(|mut file| {
+-        file.write_all(
+-            b"# This is the whitelist file.\n\
+-        # Each separate line contains a UUID Eg.\n\
+-        # 00000000-0000-0000-0000-000000000000\n\
+-        # 11111111-1111-1111-1111-111111111111\n",
+-        )
+-    }) {
+-        error!("Failed to save whitelist: {e}");
++    let path = get_root_path().join("whitelist.txt");
++    if let Err(error) = fs::write(path, "# One player UUID per line. Optional comments follow #.\n") {
++        tracing::error!("Could not create whitelist: {error}");
+     }
+ }
+diff --git i/src/lib/dashboard/Cargo.toml w/src/lib/dashboard/Cargo.toml
+index c4a3a47..18187ad 100644
+--- i/src/lib/dashboard/Cargo.toml
++++ w/src/lib/dashboard/Cargo.toml
+@@ -20,8 +20,7 @@ ferrumc-state = { workspace = true }
+ ferrumc-general-purpose = { workspace = true }
+ ferrumc-config = { workspace = true }
+ 
+-[build-dependencies]
+-reqwest = { workspace = true }
+ 
+-anyhow = { workspace = true }
+-zip = { version = "7.2.0", default-features = false, features = ["deflate"] }
+\ No newline at end of file
++ferrumc-commands = { workspace = true }
++bevy_ecs = { workspace = true }
++uuid = { workspace = true }
+diff --git i/src/lib/dashboard/build.rs w/src/lib/dashboard/build.rs
+index 6a52a96..f328e4d 100644
+--- i/src/lib/dashboard/build.rs
++++ w/src/lib/dashboard/build.rs
+@@ -1,108 +1 @@
+-use anyhow::Result;
+-use std::env;
+-use std::fs;
+-use std::io::{Cursor, Write};
+-use std::path::Path;
+-use zip::ZipArchive;
+-
+-// CONFIGURATION
+-// Since we set up the GitHub Action to release to 'latest', we can use this URL.
+-const DASHBOARD_URL: &str =
+-    "https://github.com/ferrumc-rs/dashboard/releases/download/latest/ferrumc-dashboard.zip";
+-
+-fn main() -> Result<()> {
+-    // Tell Cargo about our custom cfg flags to suppress warnings
+-    println!("cargo::rustc-check-cfg=cfg(dashboard_in_out_dir)");
+-    println!("cargo::rustc-check-cfg=cfg(dashboard_in_manifest_dir)");
+-    println!("cargo::rustc-check-cfg=cfg(dashboard_build)");
+-
+-    // 1. Determine where to put the files.
+-    let (dest_dir, use_out_dir) = if let Ok(out_dir) = env::var("OUT_DIR") {
+-        let out_path = Path::new(&out_dir);
+-        // Check if OUT_DIR actually exists and is accessible
+-        if out_path.exists() {
+-            (out_path.join("dashboard"), true)
+-        } else {
+-            let manifest_dir = env::var("CARGO_MANIFEST_DIR")?;
+-            (Path::new(&manifest_dir).join("dashboard-dist"), false)
+-        }
+-    } else {
+-        let manifest_dir = env::var("CARGO_MANIFEST_DIR")?;
+-        (Path::new(&manifest_dir).join("dashboard-dist"), false)
+-    };
+-
+-    // Emit which path we're using so include_dir! knows where to look
+-    if use_out_dir {
+-        println!("cargo:rustc-cfg=dashboard_in_out_dir");
+-    } else {
+-        println!("cargo:rustc-cfg=dashboard_in_manifest_dir");
+-    }
+-
+-    // 2. Always attempt to download the dashboard
+-    println!(
+-        "cargo:warning=Downloading Dashboard artifact from {}",
+-        DASHBOARD_URL
+-    );
+-
+-    let client = reqwest::blocking::Client::new();
+-    let download_result = client
+-        .get(DASHBOARD_URL)
+-        .header("User-Agent", "ferrumc-build-script")
+-        .send();
+-
+-    match download_result {
+-        Ok(response) if response.status().is_success() => {
+-            // Delete existing directory if it exists
+-            if dest_dir.exists() {
+-                fs::remove_dir_all(&dest_dir)?;
+-            }
+-
+-            let content = response.bytes()?;
+-
+-            // Extract the zip file
+-            let cursor = Cursor::new(content);
+-            let mut archive = ZipArchive::new(cursor)?;
+-
+-            // Create the destination directory
+-            fs::create_dir_all(&dest_dir)?;
+-
+-            // Extract all files
+-            for i in 0..archive.len() {
+-                let mut file = archive.by_index(i)?;
+-                let outpath = dest_dir.join(file.mangled_name());
+-
+-                if file.is_dir() {
+-                    fs::create_dir_all(&outpath)?;
+-                } else {
+-                    if let Some(parent) = outpath.parent() {
+-                        fs::create_dir_all(parent)?;
+-                    }
+-                    let mut outfile = fs::File::create(&outpath)?;
+-                    std::io::copy(&mut file, &mut outfile)?;
+-                }
+-            }
+-
+-            println!("cargo:warning=Dashboard extracted to {:?}", dest_dir);
+-        }
+-        _ => {
+-            // Download failed (no internet, request error, non-success status)
+-            if dest_dir.exists() {
+-                // Use existing dashboard files
+-                println!("cargo:warning=Download failed, using existing dashboard files.");
+-            } else {
+-                // Create fallback HTML
+-                println!(
+-                    "cargo:warning=Download failed and no existing dashboard. Creating fallback."
+-                );
+-                fs::create_dir_all(&dest_dir)?;
+-                let mut file = fs::File::create(dest_dir.join("index.html"))?;
+-                file.write_all(b"<h1>Dashboard Offline (Build failed to fetch)</h1>")?;
+-            }
+-        }
+-    }
+-
+-    // Emit a cfg flag so the main code knows build.rs ran
+-    println!("cargo:rustc-cfg=dashboard_build");
+-
+-    Ok(())
+-}
++fn main() {}
+diff --git i/src/lib/dashboard/src/lib.rs w/src/lib/dashboard/src/lib.rs
+index 24092f6..251a8e8 100644
+--- i/src/lib/dashboard/src/lib.rs
++++ w/src/lib/dashboard/src/lib.rs
+@@ -1,177 +1,26 @@
+-//! # Dashboard WebSocket API
+-//!
+-//! This module provides a WebSocket-based API for the FerrumC dashboard.
+-//!
+-//! ## WebSocket Protocol
+-//!
+-//! Connect to `/ws` to receive server events. The protocol uses JSON messages
+-//! with a `type` field indicating the event type.
+-//!
+-//! ### Handshake (sent once on connect)
+-//!
+-//! ```json
+-//! {
+-//!   "type": "Handshake",
+-//!   "data": {
+-//!     "system": { "cpu_model": "...", "cpu_cores": 12, "cpu_threads": 24 },
+-//!     "config": { "max_players": 100 }
+-//!   }
+-//! }
+-//! ```
+-//!
+-//! ### Metrics (sent every second)
+-//!
+-//! ```json
+-//! {
+-//!   "type": "Metric",
+-//!   "data": {
+-//!     "cpu_usage": 15.5,
+-//!     "ram_usage": 1073741824,
+-//!     "total_ram": 17179869184,
+-//!     "uptime": 3600,
+-//!     "storage_used": 536870912,
+-//!     "player_count": 42
+-//!   }
+-//! }
+-//! ```
+-
+-use crate::telemetry::DashboardEvent;
+-use axum::extract::Path;
+-use axum::http::{header, StatusCode};
+-use axum::response::{Html, IntoResponse, Response};
+-use axum::routing::get;
+-use axum::Router;
+-use ferrumc_config::server_config::get_global_config;
+-use ferrumc_state::GlobalState;
+-use include_dir::{include_dir, Dir};
+-use tokio::sync::broadcast;
+-use tracing::{debug, info};
+-
++//! Internal loopback bridge for the authenticated FerrumC dashboard manager.
++pub mod bridge;
+ mod handshake;
+ mod telemetry;
+ mod ws;
++use axum::{routing::get, Router};
++use ferrumc_state::GlobalState;
++use tokio::sync::broadcast;
+ 
+ pub fn start_dashboard(state: GlobalState) {
+-    std::thread::Builder::new()
+-        .name("ferrumc-dashboard".to_string())
+-        .spawn(move || {
+-            let rt = tokio::runtime::Builder::new_multi_thread()
+-                .enable_all()
+-                .worker_threads(2)
+-                .build()
+-                .expect("Failed to build dashboard runtime");
+-
+-            rt.block_on(start_webserver(state));
+-        })
+-        .expect("Failed to spawn dashboard thread");
+-}
+-
+-/// The HTTP protocol used by the dashboard.
+-/// (I made this variable cuz rust rover was complaining about insecure url 💔😔)
+-const PROTOCOL: &str = "http";
+-
+-/// This macro runs at COMPILE TIME.
+-/// It embeds the entire dashboard directory into the binary.
+-/// Uses OUT_DIR if available, otherwise falls back to CARGO_MANIFEST_DIR.
+-#[cfg(dashboard_in_out_dir)]
+-static DASHBOARD_DIR: Dir<'_> = include_dir!("$OUT_DIR/dashboard");
+-
+-#[cfg(dashboard_in_manifest_dir)]
+-static DASHBOARD_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/dashboard-dist");
+-
+-// Fallback if neither cfg is set (shouldn't happen, but prevents compile errors)
+-#[cfg(not(any(dashboard_in_out_dir, dashboard_in_manifest_dir)))]
+-static DASHBOARD_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/dashboard-dist");
+-
+-async fn start_webserver(state: GlobalState) {
+-    debug!("Starting FerrumC dashboard webserver...");
+-
+-    // Gather handshake data once at startup
+-    let handshake = handshake::Handshake::gather();
+-    debug!("Handshake data gathered: {:?}", handshake);
+-
+-    // Create a rx/tx (with max 100 messages buffered) for telemetry events
+-    let (tx, _rx) = broadcast::channel::<DashboardEvent>(100);
+-
+-    // Spawn the Telemetry Loop in the background with GlobalState for player count
+-    let tx_clone = tx.clone();
+-    let state_clone = state.clone();
+-    tokio::spawn(telemetry::start_telemetry_loop(tx_clone, state_clone));
+-
+-    // WebSocket state includes broadcast channel and handshake data
+-    let ws_state = ws::WsState { tx, handshake };
+-
+-    // axum app/router
+-    let app = Router::new()
+-        .route("/", get(index_handler))
+-        .route("/ws", get(ws::ws_handler))
+-        .route("/{*path}", get(static_handler))
+-        .with_state(ws_state);
+-
+-    let config = get_global_config();
+-    let addr = format!("{}:{}", config.host, config.dashboard.port);
+-
+-    match tokio::net::TcpListener::bind(&addr).await {
+-        Ok(listener) => {
+-            info!("Dashboard listening on {PROTOCOL}://{}", addr);
+-            if let Err(e) = axum::serve(listener, app).await {
+-                tracing::error!("Dashboard server error: {}", e);
+-            }
+-        }
+-        Err(e) => {
+-            tracing::error!("Failed to bind dashboard to {}: {}", addr, e);
+-        }
+-    }
+-}
+-
+-async fn index_handler() -> impl IntoResponse {
+-    match DASHBOARD_DIR.get_file("index.html") {
+-        Some(file) => Html(file.contents()).into_response(),
+-        None => (StatusCode::NOT_FOUND, "index.html not found").into_response(),
+-    }
+-}
+-
+-async fn static_handler(Path(path): Path<String>) -> Response {
+-    // Try to find the file in the embedded directory
+-    let path = path.trim_start_matches('/');
+-
+-    // Try multiple fallbacks for the path
+-    let file = DASHBOARD_DIR
+-        .get_file(path)
+-        // Try with index.html appended (for directory-style URLs like /admin/)
+-        .or_else(|| {
+-            let with_index = if path.is_empty() {
+-                "index.html".to_string()
+-            } else if path.ends_with('/') {
+-                format!("{}index.html", path)
+-            } else {
+-                format!("{}/index.html", path)
+-            };
+-            DASHBOARD_DIR.get_file(&with_index)
+-        })
+-        // Try with .html extension (for clean URLs like /about -> /about.html)
+-        .or_else(|| {
+-            if !path.contains('.') {
+-                DASHBOARD_DIR.get_file(format!("{}.html", path))
+-            } else {
+-                None
+-            }
+-        });
+-
+-    match file {
+-        Some(file) => {
+-            let file_path = file.path().to_string_lossy();
+-            let mime_type = mime_guess::from_path(file_path.as_ref())
+-                .first_or_octet_stream()
+-                .to_string();
+-
+-            (
+-                StatusCode::OK,
+-                [(header::CONTENT_TYPE, mime_type)],
+-                file.contents(),
+-            )
+-                .into_response()
+-        }
+-        None => (StatusCode::NOT_FOUND, "File not found").into_response(),
+-    }
++    std::thread::Builder::new().name("ferrumc-dashboard".into()).spawn(move || {
++        tokio::runtime::Builder::new_multi_thread().enable_all().worker_threads(2)
++            .build().expect("dashboard runtime").block_on(async move {
++                let (tx, _) = broadcast::channel(100);
++                let ws_state = ws::WsState { tx: tx.clone(), handshake: handshake::Handshake::gather() };
++                tokio::spawn(telemetry::start_telemetry_loop(tx, state.clone()));
++                let app = Router::new().route("/ws", get(ws::ws_handler))
++                    .with_state(ws_state).nest("/api", bridge::router(state));
++                let port = std::env::var("FERRUMC_BRIDGE_PORT").unwrap_or_else(|_| "9001".into());
++                let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
++                    .await.expect("internal dashboard listener");
++                tracing::info!("Internal dashboard bridge ready");
++                axum::serve(listener, app).await.expect("internal dashboard bridge");
++            });
++    }).expect("dashboard thread");
+ }
+diff --git i/src/lib/dashboard/src/telemetry.rs w/src/lib/dashboard/src/telemetry.rs
+index 338686a..002293f 100644
+--- i/src/lib/dashboard/src/telemetry.rs
++++ w/src/lib/dashboard/src/telemetry.rs
+@@ -23,6 +23,8 @@ pub struct ServerMetric {
+     pub storage_used: u64,
+     /// Number of connected players
+     pub player_count: usize,
++    pub tps: f64,
++    pub mspt: f64,
+ }
+ 
+ /// Events sent from the server to the dashboard (websocket)
+@@ -71,7 +73,10 @@ pub async fn start_telemetry_loop(tx: Sender<DashboardEvent>, state: GlobalState
+ 
+         let player_count = state.players.player_list.len();
+ 
++        let (tps, mspt) = crate::bridge::tick_metrics();
+         let metric = ServerMetric {
++            tps,
++            mspt,
+             cpu_usage: process.cpu_usage(),
+             ram_usage: process.memory(),
+             total_ram: sys.total_memory(),
+diff --git i/src/lib/net/src/conn_init/login.rs w/src/lib/net/src/conn_init/login.rs
+index 0c3177f..f5e02e6 100644
+--- i/src/lib/net/src/conn_init/login.rs
++++ w/src/lib/net/src/conn_init/login.rs
+@@ -546,6 +546,20 @@ pub(super) async fn login(
+     let player_properties =
+         setup_encryption_and_auth(conn_read, conn_write, config, &login_start, compressed).await?;
+ 
++    let rejection = if ferrumc_config::bans::is_banned(login_start.uuid) {
++        Some("You are banned from this server.")
++    } else if config.whitelist && !ferrumc_config::whitelist::get_whitelist().contains(&login_start.uuid) {
++        Some("You are not on this server's whitelist.")
++    } else { None };
++    if let Some(reason) = rejection {
++        conn_write.send_packet(crate::packets::outgoing::login_disconnect::LoginDisconnectPacket::new(
++            ferrumc_text::TextComponent::from(reason)))?;
++        conn_write.flush().await?;
++        tracing::info!("Login rejected by access list");
++        return Ok((true, LoginResult { player_identity: None, compression: compressed,
++            client_information_component: None }));
++    }
++
+     let player_identity = send_login_success(
+         conn_read,
+         conn_write,
+diff --git i/src/lib/net/src/connection.rs w/src/lib/net/src/connection.rs
+index e8a8d4f..a9244cc 100644
+--- i/src/lib/net/src/connection.rs
++++ w/src/lib/net/src/connection.rs
+@@ -95,6 +95,7 @@ impl StreamWriter {
+                             break;
+                         }
+                     }
++                    WriterCommand::Flush(done) => { let _ = done.send(()); }
+                     WriterCommand::CipherKey(new_key) => {
+                         writer.update_cipher(&new_key);
+                     }
+@@ -120,6 +121,14 @@ impl StreamWriter {
+         }
+     }
+ 
++    /// Wait until all previously queued packets have been written.
++    pub async fn flush(&self) -> Result<(), NetError> {
++        let (tx, rx) = oneshot::channel();
++        self.sender.send(WriterCommand::Flush(tx)).map_err(std::io::Error::other)?;
++        rx.await.map_err(std::io::Error::other)?;
++        Ok(())
++    }
++
+     /// Sets the entity ID for this stream writer.
+     /// This should be called after the entity is created in the ECS.
+     pub fn set_entity(&self, entity: Entity) {
+@@ -446,6 +455,7 @@ pub async fn handle_connection(
+ }
+ 
+ enum WriterCommand {
++    Flush(oneshot::Sender<()>),
+     SendPacket(Vec<u8>),
+     CipherKey(Vec<u8>),
+ }

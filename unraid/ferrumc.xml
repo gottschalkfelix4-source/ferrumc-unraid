@@ -8,21 +8,22 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/gottschalkfelix4-source/ferrumc-unraid/issues</Support>
   <Project>https://ferrumc.com/</Project>
-  <Overview>FerrumC Minecraft Java 1.21.8 server (experimental alpha) with its built-in live dashboard. Dashboard monitoring works; console, config editing and power controls are upstream placeholders. Manage settings and restart through Unraid. Keep dashboard on a trusted LAN/VPN: this release does not enforce dashboard authentication. Persistent files in /data. Stop container before backing up or importing worlds.</Overview>
+  <Overview>FerrumC Minecraft Java 1.21.8 (experimental alpha) with an extended native-style dashboard: authenticated console, live metrics, player management, bans, whitelist, config editor and server start/stop/restart. Set a dashboard password (12+ characters), or read the generated password in appdata/dashboard-password.txt. UI-saved settings override template defaults. Persistent files in /data.</Overview>
   <Category>GameServers:</Category>
-  <WebUI>http://[IP]:[PORT:9000]/?ws_port=[PORT:9000]</WebUI>
+  <WebUI>http://[IP]:[PORT:9000]/</WebUI>
   <Icon>https://raw.githubusercontent.com/gottschalkfelix4-source/ferrumc-unraid/main/unraid/icon.png</Icon>
   <TemplateURL>https://raw.githubusercontent.com/gottschalkfelix4-source/ferrumc-unraid/main/unraid/ferrumc.xml</TemplateURL>
   <ExtraParams>--stop-timeout=120 --log-opt max-size=10m --log-opt max-file=3</ExtraParams>
   <Config Name="Appdata" Target="/data" Default="/mnt/user/appdata/ferrumc" Mode="rw" Description="Persistent world, configs, whitelist and logs." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/ferrumc</Config>
   <Config Name="Minecraft port" Target="25565" Default="25565" Mode="tcp" Description="Minecraft Java client connection." Type="Port" Display="always" Required="true" Mask="false">25565</Config>
   <Config Name="Dashboard port" Target="9000" Default="9010" Mode="tcp" Description="Live dashboard, trusted LAN/VPN only. Internal port remains 9000." Type="Port" Display="always" Required="true" Mask="false">9010</Config>
+  <Config Name="Dashboard password" Target="DASHBOARD_PASSWORD" Default="" Mode="" Description="At least 12 characters. Empty: generate appdata/dashboard-password.txt. Use LAN/VPN or an HTTPS reverse proxy." Type="Variable" Display="always" Required="false" Mask="true"></Config>
   <Config Name="User ID" Target="PUID" Default="99" Mode="" Description="Unraid nobody user ID." Type="Variable" Display="advanced" Required="true" Mask="false">99</Config>
   <Config Name="Group ID" Target="PGID" Default="100" Mode="" Description="Unraid users group ID." Type="Variable" Display="advanced" Required="true" Mask="false">100</Config>
   <Config Name="Timezone" Target="TZ" Default="Europe/Berlin" Mode="" Description="Container timezone." Type="Variable" Display="advanced" Required="true" Mask="false">Europe/Berlin</Config>
-  <Config Name="Server message" Target="MOTD" Default="FerrumC auf Unraid" Mode="" Description="Server list message; overrides config.toml at startup." Type="Variable" Display="always" Required="false" Mask="false">FerrumC auf Unraid</Config>
-  <Config Name="Maximum players" Target="MAX_PLAYERS" Default="20" Mode="" Description="1-10000; overrides config.toml at startup." Type="Variable" Display="always" Required="false" Mask="false">20</Config>
-  <Config Name="View distance" Target="VIEW_DISTANCE" Default="8" Mode="" Description="2-32 chunks; overrides config.toml at startup." Type="Variable" Display="always" Required="false" Mask="false">8</Config>
+  <Config Name="Server message" Target="MOTD" Default="FerrumC auf Unraid" Mode="" Description="Server list message; initial default until settings are saved in the dashboard." Type="Variable" Display="always" Required="false" Mask="false">FerrumC auf Unraid</Config>
+  <Config Name="Maximum players" Target="MAX_PLAYERS" Default="20" Mode="" Description="1-10000; initial default until settings are saved in the dashboard." Type="Variable" Display="always" Required="false" Mask="false">20</Config>
+  <Config Name="View distance" Target="VIEW_DISTANCE" Default="8" Mode="" Description="2-32 chunks; initial default until settings are saved in the dashboard." Type="Variable" Display="always" Required="false" Mask="false">8</Config>
   <Config Name="Online authentication" Target="ONLINE_MODE" Default="true|false" Mode="" Description="Authenticate Minecraft accounts through Mojang." Type="Variable" Display="always" Required="true" Mask="false">true</Config>
   <Config Name="Gamemode" Target="GAMEMODE" Default="creative|survival|adventure|spectator" Mode="" Description="Creative recommended; FerrumC does not provide full survival gameplay." Type="Variable" Display="always" Required="true" Mask="false">creative</Config>
   <Config Name="Whitelist" Target="WHITELIST" Default="false|true" Mode="" Description="Enable after configuring /data/whitelist.txt using the upstream UUID format." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>

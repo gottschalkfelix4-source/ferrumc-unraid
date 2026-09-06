@@ -53,6 +53,8 @@ jobs:
           build-args: REVISION=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+      - name: Install Minecraft protocol test client
+        run: npm ci --prefix tests/client
       - name: Test real server, dashboard, permissions and persistence
         run: python3 tests/container_smoke.py ferrumc:test
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0

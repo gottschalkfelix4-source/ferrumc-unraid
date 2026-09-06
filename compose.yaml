@@ -17,6 +17,7 @@ services:
       ONLINE_MODE: "true"
       GAMEMODE: creative
       LOG_LEVEL: info
+      DASHBOARD_PASSWORD: "${DASHBOARD_PASSWORD:-}"
     volumes:
       - ./data:/data
     logging:

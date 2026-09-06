@@ -1,4 +1,4 @@
-"""Prepare persistent FerrumC data, drop privileges, then replace PID 1."""
+"""Prepare persistent FerrumC data, drop privileges, then run the dashboard supervisor."""
 import os
 from pathlib import Path
 import shutil
@@ -8,8 +8,8 @@ import tempfile
 
 import tomlkit
 
-DATA = Path("/data")
-BINARY = Path("/opt/ferrumc/ferrumc")
+DATA = Path(os.environ.get("FERRUMC_DATA", "/data"))
+BINARY = Path(os.environ.get("FERRUMC_BINARY", "/opt/ferrumc/ferrumc"))
 
 
 def integer(value, name, minimum, maximum):
@@ -99,11 +99,15 @@ def main():
     subprocess.run([str(destination), "setup"], check=True)
     path = DATA / "configs/config.toml"
     before = path.read_text()
-    after = configure(before, os.environ)
+    after = configure(before, {} if (DATA / ".dashboard-config-managed").exists() else os.environ)
     if before != after:
         atomic_write(path, after)
     arguments = sys.argv[1:] or ["run"]
     print(f"Starting FerrumC as UID {os.geteuid()}, GID {os.getegid()}", flush=True)
+    if arguments == ["run"]:
+        from manager import run
+        run(DATA, destination)
+        return
     os.execv(str(destination), [str(destination), "--log", level, *arguments])
 
 
@@ -118,4 +122,3 @@ if __name__ == "__main__":
         else:
             print(f"Startup failed: {error}", file=sys.stderr)
         sys.exit(1)
-

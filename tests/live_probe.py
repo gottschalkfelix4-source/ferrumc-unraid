@@ -17,7 +17,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "docker"))
 from minecraft_status import read_exact, server_status
 
 
-def probe(mc_port, dashboard_port):
+def probe(mc_port, dashboard_port, password):
+    from dashboard_probe import Dashboard
+    api = Dashboard(dashboard_port, password)
+    api.wait(lambda state: state["fresh"])
+    cookie = "; ".join(f"{item.name}={item.value}" for item in api.jar)
     status = server_status(mc_port, timeout=10)
     assert status["version"]["protocol"] == 772, status
     assert status["players"]["online"] == 0, status
@@ -32,7 +36,7 @@ def probe(mc_port, dashboard_port):
         key = base64.b64encode(os.urandom(16)).decode()
         request = (f"GET /ws HTTP/1.1\r\nHost: 127.0.0.1:{dashboard_port}\r\n"
                    f"Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n"
-                   "Sec-WebSocket-Version: 13\r\n\r\n")
+                   f"Sec-WebSocket-Version: 13\r\nOrigin: {url}\r\nCookie: {cookie}\r\n\r\n")
         sock.sendall(request.encode())
         stream = sock.makefile("rb")
         assert b"101" in stream.readline()
@@ -45,7 +49,7 @@ def probe(mc_port, dashboard_port):
         expected = base64.b64encode(hashlib.sha1(
             (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
         assert headers["sec-websocket-accept"] == expected
-        for expected_event in ("Handshake", "Metric"):
+        for expected_event in ("State",):
             first, second = read_exact(stream, 2)
             assert first == 0x81 and not second & 0x80
             size = second & 127
@@ -56,8 +60,7 @@ def probe(mc_port, dashboard_port):
             assert size < 1048576
             event = json.loads(read_exact(stream, size))
             assert event["type"] == expected_event, event
-            if expected_event == "Metric":
-                assert event["data"]["ram_usage"] > 0
+            assert event["data"]["metrics"]["ram_usage"] > 0
     print("PASS: Minecraft 1.21.8 status, dashboard HTML/JS and live WebSocket metrics")
     return status
 
@@ -66,5 +69,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mc-port", type=int, default=25565)
     parser.add_argument("--dashboard-port", type=int, default=9000)
+    parser.add_argument("--password", required=True)
     args = parser.parse_args()
-    probe(args.mc_port, args.dashboard_port)
+    probe(args.mc_port, args.dashboard_port, args.password)

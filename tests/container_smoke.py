@@ -6,6 +6,7 @@ import time
 import uuid
 
 from live_probe import probe
+from dashboard_probe import exercise
 
 
 def docker(*args, check=True):
@@ -17,13 +18,14 @@ def docker(*args, check=True):
 def main(image):
     name = "ferrumc-test-" + uuid.uuid4().hex[:12]
     volume = name + "-data"
+    password = "ferrumc-ci-" + uuid.uuid4().hex
     docker("volume", "create", volume)
     try:
         for iteration in range(2):
             docker("run", "-d", "--name", name, "--stop-timeout", "120",
                    "-p", "127.0.0.1::25565", "-p", "127.0.0.1::9000",
                    "-v", f"{volume}:/data", "-e", "PUID=99", "-e", "PGID=100",
-                   "-e", "MAX_PLAYERS=20", "-e", 'MOTD=Test "persistent" world', image)
+                   "-e", "MAX_PLAYERS=20", "-e", "DASHBOARD_PASSWORD=" + password, "-e", 'MOTD=Test "persistent" world', image)
             deadline = time.monotonic() + 180
             while time.monotonic() < deadline:
                 state = json.loads(docker("inspect", name))[0]["State"]
@@ -37,8 +39,13 @@ def main(image):
             inspection = json.loads(docker("inspect", name))[0]
             ports = inspection["NetworkSettings"]["Ports"]
             status = probe(int(ports["25565/tcp"][0]["HostPort"]),
-                           int(ports["9000/tcp"][0]["HostPort"]))
-            assert status["players"]["max"] == 20
+                           int(ports["9000/tcp"][0]["HostPort"]), password)
+            assert status["players"]["max"] == (20 if iteration == 0 else 21)
+            if iteration == 0:
+                dashboard_port = int(ports["9000/tcp"][0]["HostPort"])
+                minecraft_port = int(ports["25565/tcp"][0]["HostPort"])
+                exercise(dashboard_port, password)
+                subprocess.run(["node", "tests/client/players.cjs", str(dashboard_port), str(minecraft_port), password], check=True, timeout=240)
             script = '''import hashlib,json,pathlib,tomllib
 p=pathlib.Path('/data')
 c=tomllib.loads((p/'configs/config.toml').read_text())

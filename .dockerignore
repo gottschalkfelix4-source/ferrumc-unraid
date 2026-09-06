@@ -6,3 +6,10 @@
 !LICENSE
 !LICENSE.ferrumc
 
+!dashboard/
+!dashboard/**
+!patches/
+!patches/**
+dashboard/node_modules/
+dashboard/.svelte-kit/
+dashboard/build/
