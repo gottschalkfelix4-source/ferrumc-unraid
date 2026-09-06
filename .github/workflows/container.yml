@@ -53,6 +53,9 @@ jobs:
           build-args: REVISION=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
       - name: Install Minecraft protocol test client
         run: npm ci --prefix tests/client
       - name: Test real server, dashboard, permissions and persistence
