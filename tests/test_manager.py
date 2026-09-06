@@ -99,6 +99,16 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(invalid.status, 400)
         self.assertEqual((self.path / "configs/config.toml").read_text(), saved)
 
+    async def test_explicit_https_proxy_origin(self):
+        self.manager.public_origin = "https://ferrumc.example.test"
+        response = await self.client.post("/api/login", json={"password": "test-password-for-ci"},
+            headers=dict(self.headers, Origin=self.manager.public_origin))
+        self.assertEqual(response.status, 200)
+        self.assertTrue(response.cookies["ferrumc_session"]["secure"])
+        rejected = await self.client.post("/api/login", json={},
+            headers=dict(self.headers, Origin="https://attacker.example", **{"X-Forwarded-Host": "attacker.example"}))
+        self.assertEqual(rejected.status, 403)
+
     async def test_rate_limit_and_startup_health(self):
         for _ in range(8):
             self.assertEqual((await self.client.post("/api/login", json={"password": "wrong"}, headers=self.headers)).status, 401)

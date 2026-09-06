@@ -14,6 +14,7 @@ import sqlite3
 import time
 import tomllib
 import uuid
+from urllib.parse import urlsplit
 
 from aiohttp import ClientError, ClientSession, ClientTimeout, WSMsgType, web
 import tomlkit
@@ -48,6 +49,13 @@ class Manager:
         self.data, self.binary, self.static = Path(data), Path(binary), Path(static).resolve()
         self.bridge = f"http://127.0.0.1:{bridge_port}"
         self.bridge_port = bridge_port
+        self.public_origin = os.environ.get("DASHBOARD_ORIGIN", "").rstrip("/")
+        if self.public_origin:
+            origin = urlsplit(self.public_origin)
+            if (origin.scheme not in ("http", "https") or not origin.hostname or
+                    origin.username or origin.password or origin.path or origin.query or origin.fragment):
+                raise ValueError("DASHBOARD_ORIGIN must be an http(s) origin without a path")
+            _ = origin.port  # Reject malformed ports.
         self.proc = None
         self.output_task = None
         self.status = "Stopped"
@@ -247,14 +255,15 @@ class Manager:
     @web.middleware
     async def security(self, request, handler):
         try:
+            expected_origin = self.public_origin or f"{request.scheme}://{request.host}"
             if request.method not in ("GET", "HEAD"):
                 if request.headers.get("X-FerrumC-Request") != "dashboard":
                     raise web.HTTPForbidden(text="Missing request protection")
                 origin = request.headers.get("Origin")
-                if origin and origin != f"{request.scheme}://{request.host}":
+                if origin and origin != expected_origin:
                     raise web.HTTPForbidden(text="Cross-origin requests are not allowed")
             if request.path == "/ws":
-                if request.headers.get("Origin") != f"{request.scheme}://{request.host}":
+                if request.headers.get("Origin") != expected_origin:
                     raise web.HTTPForbidden(text="Cross-origin WebSocket rejected")
             if (request.path.startswith("/api/") and request.path not in ("/api/login", "/api/session")) or request.path == "/ws":
                 if not self.authorized(request):
@@ -290,7 +299,7 @@ class Manager:
         token = secrets.token_urlsafe(32)
         self.sessions[token] = now + 43200
         response = web.json_response({"authenticated": True})
-        response.set_cookie("ferrumc_session", token, httponly=True, secure=request.secure,
+        response.set_cookie("ferrumc_session", token, httponly=True, secure=request.secure or self.public_origin.startswith("https://"),
                             samesite="Strict", max_age=43200, path="/")
         return response
 

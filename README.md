@@ -44,7 +44,7 @@ Das originale Svelte-Dashboard wurde im bestehenden dunklen Design mit orangefar
 - **Power Options:** Start, geordnetes Stoppen und Neustart mit Bestätigung. Das Dashboard bleibt bei gestopptem Minecraft-Server erreichbar.
 - **Anmeldung:** passwortgeschützte API und WebSocket-Verbindung, begrenzte Loginversuche, HttpOnly-Sitzung und Schutz gegen fremde Webseiten.
 
-Das Passwort wird niemals an FerrumCs Kindprozess weitergegeben. Der native Verwaltungsport `9001` ist ausschließlich im Container auf Loopback erreichbar und wird nicht veröffentlicht. `dashboard.secret` aus der alten FerrumC-Konfiguration wird nicht verwendet. Für Zugriff über das Internet HTTPS über einen Reverse Proxy oder ein VPN verwenden; HTTP überträgt das Passwort unverschlüsselt. WebSocket und UI nutzen denselben externen Port, ohne `ws_port`-Parameter.
+Das Passwort wird niemals an FerrumCs Kindprozess weitergegeben. Der native Verwaltungsport `9001` ist ausschließlich im Container auf Loopback erreichbar und wird nicht veröffentlicht. `dashboard.secret` aus der alten FerrumC-Konfiguration wird nicht verwendet. Für Zugriff über das Internet HTTPS über einen Reverse Proxy oder ein VPN verwenden; HTTP überträgt das Passwort unverschlüsselt. Bei einem HTTPS-Reverse-Proxy zusätzlich `DASHBOARD_ORIGIN=https://ferrumc.example.com` auf die tatsächliche öffentliche Adresse setzen und WebSocket-Weiterleitung aktivieren. So funktionieren Origin-Prüfung und Secure-Cookies trotz TLS-Terminierung am Proxy; weitergeleitete Host-Header werden nicht blind vertraut. WebSocket und UI nutzen denselben externen Port, ohne `ws_port`-Parameter.
 
 FerrumC selbst bleibt experimentell und ist kein vollständiger Vanilla-/Paper-Ersatz. Creative ist voreingestellt; vollständiges Survival, Java-Plugins und Vanilla-Parität sind nicht Bestandteil dieser Dashboard-Erweiterung. Es wird ein festgeschriebener Release-Quellstand mit nachvollziehbaren lokalen Patches gebaut.
 
@@ -66,6 +66,7 @@ Alternativ unter **Edit → Add another Path, Port, Variable… → Variable** d
 | --- | --- | --- |
 | `PUID` / `PGID` | `99` / `100` | Unraid `nobody:users`; Server läuft mit diesen IDs |
 | `DASHBOARD_PASSWORD` | leer | Mindestens 12 Zeichen; leer erzeugt ein dauerhaftes Passwort in `dashboard-password.txt` |
+| `DASHBOARD_ORIGIN` | leer | Bei Reverse Proxy: öffentliche Basisadresse ohne Pfad, z. B. `https://ferrumc.example.com` |
 | `TZ` | `Europe/Berlin` | Zeitzone; FerrumC kann Logs weiterhin in UTC schreiben |
 | `UMASK` | `002` | Dateirechte als Oktalzahl |
 | `MOTD` | `FerrumC auf Unraid` | Nachricht in der Serverliste |

@@ -15,7 +15,7 @@ The public dashboard listens on container port 9000. The native bridge only list
 
 ## Public API
 
-All `/api/*` routes except `login` and `session` require the dashboard session cookie. Mutations additionally require `X-FerrumC-Request: dashboard`; any supplied Origin must match the request origin. `/ws` requires both the cookie and the exact Origin. The UI uses same-origin URLs, so host port remapping needs no separate WebSocket configuration.
+All `/api/*` routes except `login` and `session` require the dashboard session cookie. Mutations additionally require `X-FerrumC-Request: dashboard`; any supplied Origin must match the request origin. `/ws` requires both the cookie and the exact Origin. For TLS termination at a reverse proxy, set `DASHBOARD_ORIGIN` to the explicit public origin; this also enables Secure cookies. Forwarded headers alone are not trusted. The UI uses same-origin URLs, so host port remapping needs no separate WebSocket configuration.
 
 | Route | Method | Purpose |
 | --- | --- | --- |
